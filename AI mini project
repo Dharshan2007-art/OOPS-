@@ -1,0 +1,204 @@
+import pygame
+import random
+import sys
+import os
+
+pygame.init()
+
+# Window setup
+WIDTH, HEIGHT = 600, 400
+CELL_SIZE = 20
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("🐍 Snake Game with Levels")
+
+# Colors
+BLACK = (0, 0, 0)
+GREEN = (0, 200, 0)
+DARK_GREEN = (0, 100, 0)
+WHITE = (255, 255, 255)
+GRAY = (40, 40, 40)
+RED = (255, 0, 0)
+YELLOW = (220, 180, 0)
+
+clock = pygame.time.Clock()
+
+# Fonts
+font_small = pygame.font.SysFont("Arial", 26)
+font_large = pygame.font.SysFont("Arial", 42, True)
+
+# Rat image for food
+RAT_IMG_PATH = "rat.png"
+if os.path.exists(RAT_IMG_PATH):
+    rat_img = pygame.image.load(RAT_IMG_PATH)
+    rat_img = pygame.transform.scale(rat_img, (CELL_SIZE, CELL_SIZE))
+else:
+    rat_img = None  # fallback (circle)
+
+# High score file
+HS_FILE = "highscore.txt"
+
+def load_highscore():
+    if os.path.exists(HS_FILE):
+        with open(HS_FILE, "r") as f:
+            return int(f.read().strip())
+    return 0
+
+def save_highscore(score):
+    with open(HS_FILE, "w") as f:
+        f.write(str(score))
+
+def random_food_position():
+    x = random.randrange(0, WIDTH // CELL_SIZE) * CELL_SIZE
+    y = random.randrange(0, HEIGHT // CELL_SIZE) * CELL_SIZE
+    return [x, y]
+
+def draw_snake(snake_body):
+    for i, (x, y) in enumerate(snake_body):
+        color = DARK_GREEN if i == 0 else GREEN
+        pygame.draw.rect(screen, color, (x, y, CELL_SIZE, CELL_SIZE))
+
+def draw_food(food_pos):
+    if rat_img:
+        screen.blit(rat_img, (food_pos[0], food_pos[1]))
+    else:
+        pygame.draw.circle(screen, RED, (food_pos[0] + CELL_SIZE//2, food_pos[1] + CELL_SIZE//2), CELL_SIZE//2)
+
+def draw_score(score, high_score):
+    text = font_small.render(f"Score: {score}   High Score: {high_score}", True, WHITE)
+    screen.blit(text, (10, 10))
+
+def draw_text_center(text, color, y):
+    surf = font_large.render(text, True, color)
+    rect = surf.get_rect(center=(WIDTH//2, y))
+    screen.blit(surf, rect)
+
+# ---- Button Helper ----
+def button(text, x, y, w, h, base_color, hover_color):
+    mouse = pygame.mouse.get_pos()
+    click = pygame.mouse.get_pressed()
+    rect = pygame.Rect(x, y, w, h)
+    color = hover_color if rect.collidepoint(mouse) else base_color
+    pygame.draw.rect(screen, color, rect, border_radius=8)
+    text_surf = font_small.render(text, True, WHITE)
+    screen.blit(text_surf, (x + (w - text_surf.get_width())/2, y + (h - text_surf.get_height())/2))
+    if rect.collidepoint(mouse) and click[0] == 1:
+        pygame.time.wait(200)  # small debounce delay
+        return True
+    return False
+
+# ---- Level Selection Menu ----
+def level_menu():
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+        screen.fill(BLACK)
+        draw_text_center("🐍 Snake Game", WHITE, 100)
+        draw_text_center("Select Difficulty", WHITE, 160)
+
+        if button("Easy", 230, 200, 140, 45, GREEN, DARK_GREEN):
+            return 8
+        if button("Medium", 230, 260, 140, 45, YELLOW, (180, 130, 0)):
+            return 12
+        if button("Hard", 230, 320, 140, 45, RED, (200, 0, 0)):
+            return 16
+
+        pygame.display.update()
+        clock.tick(30)
+
+# ---- Game Logic ----
+def game_loop(initial_speed):
+    snake_pos = [100, 100]
+    snake_body = [[100, 100], [80, 100], [60, 100]]
+    direction = "RIGHT"
+    change_to = direction
+    food_pos = random_food_position()
+    score = 0
+    high_score = load_highscore()
+    speed = initial_speed
+    paused = False
+    game_over = False
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP and direction != "DOWN":
+                    change_to = "UP"
+                elif event.key == pygame.K_DOWN and direction != "UP":
+                    change_to = "DOWN"
+                elif event.key == pygame.K_LEFT and direction != "RIGHT":
+                    change_to = "LEFT"
+                elif event.key == pygame.K_RIGHT and direction != "LEFT":
+                    change_to = "RIGHT"
+                elif event.key == pygame.K_p:
+                    paused = not paused
+                elif event.key == pygame.K_r and game_over:
+                    return  # restart from menu
+
+        if paused:
+            draw_text_center("PAUSED - Press P to Continue", WHITE, HEIGHT // 2)
+            pygame.display.update()
+            continue
+
+        if not game_over:
+            direction = change_to
+
+            # Move snake
+            if direction == "UP":
+                snake_pos[1] -= CELL_SIZE
+            elif direction == "DOWN":
+                snake_pos[1] += CELL_SIZE
+            elif direction == "LEFT":
+                snake_pos[0] -= CELL_SIZE
+            elif direction == "RIGHT":
+                snake_pos[0] += CELL_SIZE
+
+            # Add head
+            snake_body.insert(0, list(snake_pos))
+
+            # Food collision
+            if snake_pos == food_pos:
+                score += 1
+                food_pos = random_food_position()
+                if speed < 25:
+                    speed += 0.2
+            else:
+                snake_body.pop()
+
+            # Collision with wall or self
+            if (
+                snake_pos[0] < 0 or snake_pos[0] >= WIDTH or
+                snake_pos[1] < 0 or snake_pos[1] >= HEIGHT
+            ):
+                game_over = True
+
+            for block in snake_body[1:]:
+                if snake_pos == block:
+                    game_over = True
+
+        # Draw everything
+        screen.fill(BLACK)
+        draw_snake(snake_body)
+        draw_food(food_pos)
+        draw_score(score, high_score)
+
+        if game_over:
+            draw_text_center("GAME OVER", RED, HEIGHT // 2 - 40)
+            draw_text_center("Press R to Restart", WHITE, HEIGHT // 2 + 10)
+            if score > high_score:
+                high_score = score
+                save_highscore(high_score)
+
+        pygame.display.update()
+        clock.tick(speed)
+
+# ---- Main Program ----
+if __name__ == "__main__":
+    while True:
+        level_speed = level_menu()  # choose Easy/Medium/Hard
+        game_loop(level_speed)
